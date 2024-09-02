@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo Uygulaması</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .input-container {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px 0 0 4px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .add-button {
+            border-radius: 0 4px 4px 0;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            background-color: white;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .completed {
+            text-decoration: line-through;
+            color: #7f8c8d;
+            background-color: #ecf0f1;
+        }
+        .todo-buttons button {
+            margin-left: 10px;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        .complete-button {
+            background-color: #2ecc71;
+        }
+        .complete-button:hover {
+            background-color: #27ae60;
+        }
+        .delete-button {
+            background-color: #e74c3c;
+        }
+        .delete-button:hover {
+            background-color: #c0392b;
+        }
+        li:active {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <h1>Todo Uygulaması</h1>
+    <div class="input-container">
+        <input type="text" id="todoInput" placeholder="Yeni görev ekle...">
+        <button onclick="addTodo()" class="add-button">Ekle</button>
+    </div>
+    
+    <h2>Yapılacaklar</h2>
+    <ul id="todoList" ondrop="drop(event)" ondragover="allowDrop(event)"></ul>
+    
+    <h2>Tamamlananlar</h2>
+    <ul id="completedList" ondrop="drop(event)" ondragover="allowDrop(event)"></ul>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+        const todoInput = document.getElementById('todoInput');
+        const todoList = document.getElementById('todoList');
+        const completedList = document.getElementById('completedList');
+        const socket = io('http://192.168.1.221:3000');
+
+        function addTodo() {
+            const todoText = todoInput.value.trim();
+            if (todoText) {
+                const li = createTodoItem(todoText);
+                li.id = 'todo-' + todoCounter++;
+                todoList.appendChild(li);
+                todoInput.value = '';
+                saveTodos();
+            }
+        }
+
+        function createTodoItem(text) {
+            const li = document.createElement('li');
+            li.draggable = true;
+            li.ondragstart = drag;
+            li.innerHTML = `
+                <span>${text}</span>
+                <div class="todo-buttons">
+                    <button onclick="completeTodo(this)" class="complete-button">Tamamla</button>
+                    <button onclick="deleteTodo(this)" class="delete-button">Sil</button>
+                </div>
+            `;
+            return li;
+        }
+
+        function completeTodo(button) {
+            const li = button.parentElement.parentElement;
+            li.classList.add('completed');
+            button.textContent = 'Geri Al';
+            button.onclick = function() { uncompleteTodo(this); };
+            completedList.appendChild(li);
+            saveTodos();
+        }
+
+        function uncompleteTodo(button) {
+            const li = button.parentElement.parentElement;
+            li.classList.remove('completed');
+            button.textContent = 'Tamamla';
+            button.onclick = function() { completeTodo(this); };
+            todoList.appendChild(li);
+            saveTodos();
+        }
+
+        function deleteTodo(button) {
+            const li = button.parentElement.parentElement;
+            li.remove();
+            saveTodos();
+        }
+
+        todoInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addTodo();
+            }
+        });
+
+        function allowDrop(ev) {
+            ev.preventDefault();
+        }
+
+        function drag(ev) {
+            ev.dataTransfer.setData("text", ev.target.id);
+        }
+
+        function drop(ev) {
+            ev.preventDefault();
+            var data = ev.dataTransfer.getData("text");
+            var draggedElement = document.getElementById(data);
+            var dropzone = ev.target.closest('ul');
+            
+            if (dropzone && draggedElement) {
+                var closestElement = getClosestElement(dropzone, ev.clientY);
+                
+                if (closestElement) {
+                    dropzone.insertBefore(draggedElement, closestElement);
+                } else {
+                    dropzone.appendChild(draggedElement);
+                }
+                
+                updateTodoStatus(draggedElement, dropzone);
+            }
+            saveTodos();
+        }
+
+        function getClosestElement(container, mouseY) {
+            const elements = Array.from(container.children);
+            return elements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = mouseY - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        function updateTodoStatus(element, dropzone) {
+            if (dropzone.id === 'completedList') {
+                element.classList.add('completed');
+                element.querySelector('.complete-button').textContent = 'Geri Al';
+                element.querySelector('.complete-button').onclick = function() { uncompleteTodo(this); };
+            } else {
+                element.classList.remove('completed');
+                element.querySelector('.complete-button').textContent = 'Tamamla';
+                element.querySelector('.complete-button').onclick = function() { completeTodo(this); };
+            }
+        }
+
+        // Her todo öğesine benzersiz bir ID atamak için bir sayaç
+        let todoCounter = 0;
+
+        function saveTodos() {
+            const todos = Array.from(todoList.children).concat(Array.from(completedList.children)).map(li => ({
+                text: li.querySelector('span').textContent,
+                completed: li.classList.contains('completed')
+            }));
+            socket.emit('saveTodos', todos);
+        }
+
+        function loadTodos() {
+            socket.emit('getTodos');
+        }
+
+        socket.on('todosLoaded', (todos) => {
+            todoList.innerHTML = '';
+            completedList.innerHTML = '';
+            todos.forEach(todo => {
+                const li = createTodoItem(todo.text);
+                li.id = 'todo-' + todoCounter++;
+                if (todo.completed) {
+                    li.classList.add('completed');
+                    li.querySelector('.complete-button').textContent = 'Geri Al';
+                    li.querySelector('.complete-button').onclick = function() { uncompleteTodo(this); };
+                    completedList.appendChild(li);
+                } else {
+                    todoList.appendChild(li);
+                }
+            });
+        });
+
+        socket.on('todosUpdated', (todos) => {
+            loadTodos();
+        });
+        
+        window.addEventListener('load', loadTodos);
+    </script>
+</body>
+</html>
